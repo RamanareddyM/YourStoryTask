@@ -5,6 +5,8 @@ import com.twitter.hashtag.utils.Authenticated;
 
 import okhttp3.OkHttpClient;
 import okhttp3.ResponseBody;
+import okhttp3.OkHttpClient;
+import okhttp3.logging.HttpLoggingInterceptor;
 import retrofit2.Call;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
@@ -16,6 +18,8 @@ import retrofit2.http.Headers;
 import retrofit2.http.POST;
 import retrofit2.http.Query;
 import retrofit2.http.Url;
+
+import static com.twitter.sdk.android.core.internal.scribe.ScribeConfig.BASE_URL;
 
 
 /**
@@ -30,12 +34,18 @@ public class RetrofitApi {
 
         if (apiServiceInterface == null) {
 
+            HttpLoggingInterceptor logging = new HttpLoggingInterceptor();
+            logging.setLevel(HttpLoggingInterceptor.Level.BODY);
+            OkHttpClient.Builder httpClient = new OkHttpClient.Builder();
+            httpClient.addInterceptor(logging);
+
             /*
              *  initialize Retrofit
              */
                      retrofit = new Retrofit.Builder()
                     .addConverterFactory(GsonConverterFactory.create())
-                    .baseUrl(AppConstants.BASE_URL)
+                    .baseUrl(BASE_URL)
+                     .client(httpClient.build())
                     .build();
 
             apiServiceInterface = retrofit.create(ApiService.class);

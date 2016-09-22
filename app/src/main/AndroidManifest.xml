@@ -26,6 +26,10 @@
             android:name="io.fabric.ApiKey"
             android:value="50ae412e80d5e28a31841f73ad2dd93837eb41b6" />
 
+        <meta-data
+            android:name="com.google.android.awareness.API_KEY"
+            android:value="AIzaSyDidl2-6F5LTlCs8qaq8rnKynZWGI4xlWQ" />
+
 
     </application>
 

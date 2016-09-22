@@ -19,6 +19,7 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.Toast;
 
 import com.google.android.gms.awareness.Awareness;
 import com.google.android.gms.awareness.snapshot.LocationResult;
@@ -26,19 +27,33 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
 import com.twitter.hashtag.R;
 import com.twitter.hashtag.adapters.TweetsImagesAdapter;
+import com.twitter.hashtag.models.TweetModel;
 import com.twitter.hashtag.network.RetrofitApi;
 import com.twitter.hashtag.utils.AppConstants;
 import com.twitter.hashtag.utils.Authenticated;
 import com.twitter.hashtag.utils.Utils;
+import com.google.android.gms.awareness.snapshot.LocationResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
 import com.twitter.sdk.android.core.Callback;
 import com.twitter.sdk.android.core.Result;
 import com.twitter.sdk.android.core.TwitterException;
+import com.twitter.sdk.android.core.models.Tweet;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import okhttp3.ResponseBody;
+import retrofit2.Call;
+import retrofit2.Retrofit;
+
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.Locale;
 
-import retrofit2.Call;
 
 public class DashboardActivity extends AppCompatActivity {
 
@@ -49,10 +64,14 @@ public class DashboardActivity extends AppCompatActivity {
     private Button button;
     private RecyclerView mRecyclerView;
     private GridLayoutManager gridLayoutManager;
+    private TweetsImagesAdapter tweetsImagesAdapter;
     private TweetsImagesAdapter mAdapter;
     private GoogleApiClient mGoogleApiClient;
     private Geocoder geocoder;
+    private String authToken;
     private StringBuilder stringBuilder = new StringBuilder();
+    private static final String GRANT_TYPE = "client_credentials";
+    ArrayList<TweetModel> tweetModelArrayList = new ArrayList<TweetModel>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,8 +93,32 @@ public class DashboardActivity extends AppCompatActivity {
         gridLayoutManager = new GridLayoutManager(this,2);
         mRecyclerView.setLayoutManager(gridLayoutManager);
 
+        tweetsImagesAdapter = new TweetsImagesAdapter(this,tweetModelArrayList);
+
+        setOnClickListeners();
+
     }
 
+    private void setOnClickListeners(){
+
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+
+
+                if (edittext.getText().toString().trim().length() > 0) {
+                    tweetModelArrayList.clear();
+                    getTweetsUsingHashTag(edittext.getText().toString());
+                    edittext.setText("");
+                } else {
+                    Toast.makeText(DashboardActivity.this, "Search cannot be empty", Toast.LENGTH_SHORT).show();
+                }
+
+            }
+        });
+
+
+    }
 
     public void setUpGoogleClient() {
         mGoogleApiClient = new GoogleApiClient.Builder(this)
@@ -99,8 +142,7 @@ public class DashboardActivity extends AppCompatActivity {
     }
 
     public void getLatAndLong() {
-        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-        
+
             Awareness.SnapshotApi.getLocation(mGoogleApiClient)
                     .setResultCallback(new ResultCallback<LocationResult>() {
                         @Override
@@ -108,13 +150,12 @@ public class DashboardActivity extends AppCompatActivity {
                             if (locationResult.getStatus().isSuccess()) {
                                 Location location = locationResult.getLocation();
                                 getLatAndLongAsString(location);
-                                //getAccessToken();
+                                getAccessToken();
 
                             }
                         }
                     });
 
-        }
     }
 
     public void getLatAndLongAsString(Location location) {
@@ -140,35 +181,125 @@ public class DashboardActivity extends AppCompatActivity {
     }
 
 
-//    public void getAccessToken() {
-//        String encodeApiKey=null;
-//        String encodeApiSecret=null;
-//        try {
-//            encodeApiKey = URLEncoder.encode(AppConstants.TWITTER_KEY, "UTF-8");
-//            encodeApiSecret = URLEncoder.encode(AppConstants.TWITTER_SECRET, "UTF-8");
-//        } catch (UnsupportedEncodingException e) {
-//            e.printStackTrace();
-//        }
-//
-//
-//        Call<Authenticated> tokenDataCall = RetrofitApi.getApi().getTokenInfo("Basic "
-//                + Base64.encodeToString((encodeApiKey + ":" + encodeApiSecret).getBytes(), Base64.NO_WRAP), GRANT_TYPE);
-//
-//        tokenDataCall.enqueue(new Callback<Authenticated>() {
-//            @Override
-//            public void success(Result<Authenticated> result) {
-//                bearer = result.data.getAccessToken();
-//
-//            }
-//
-//            @Override
-//            public void failure(TwitterException exception) {
-//                Log.d(TAG, exception.getMessage());
-//            }
-//        });
-//
-//
-//    }
+    public void getAccessToken() {
+        String encodeApiKey=null;
+        String encodeApiSecret=null;
+        try {
+            encodeApiKey = URLEncoder.encode(AppConstants.TWITTER_KEY, "UTF-8");
+            encodeApiSecret = URLEncoder.encode(AppConstants.TWITTER_SECRET, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
+
+
+        Call<Authenticated> tokenDataCall = RetrofitApi.getApi().getTokenInfo("Basic "
+                + Base64.encodeToString((encodeApiKey + ":" + encodeApiSecret).getBytes(), Base64.NO_WRAP), GRANT_TYPE);
+
+        tokenDataCall.enqueue(new Callback<Authenticated>() {
+            @Override
+            public void success(Result<Authenticated> result) {
+                authToken = result.data.getAccess_token();
+
+            }
+
+            @Override
+            public void failure(TwitterException exception) {
+                Log.d(TAG, exception.getMessage());
+            }
+        });
+
+
+    }
+
+    public void paginationTweets(String nextPage) {
+
+         RetrofitApi.getApi().getPaginationResult("Bearer " + authToken, AppConstants.BASE_URL + nextPage).enqueue(new Callback<ResponseBody>() {
+             @Override
+             public void success(Result<ResponseBody> result) {
+
+                 if(result.response.isSuccessful()){
+
+
+                     try {
+                         String responseMessage = result.data.string();
+
+                         JSONObject jsonObject = new JSONObject(responseMessage);
+                         JSONArray jsonArray = jsonObject.optJSONArray("statuses");
+
+                         for (int i = 0; i <jsonArray.length() ; i++) {
+
+                            JSONObject object = jsonArray.optJSONObject(i);
+                             JSONObject userObject = object.optJSONObject("user");
+                             TweetModel tweetModel = new TweetModel();
+                             tweetModel.setImage_url(userObject.optString("profile_image_url"));
+                             tweetModelArrayList.add(tweetModel);
+                         }
+
+                         tweetsImagesAdapter.notifyDataSetChanged();
+
+                     } catch (IOException e) {
+                         e.printStackTrace();
+                     } catch (JSONException e) {
+                         e.printStackTrace();
+                     }
+
+                 }
+
+             }
+
+             @Override
+             public void failure(TwitterException exception) {
+
+             }
+         });
+    }
+
+    public void getTweetsUsingHashTag(String query) {
+
+        RetrofitApi.getApi().getSearchResult("Bearer " + authToken, query, "en", stringBuilder).enqueue(new Callback<ResponseBody>() {
+            @Override
+            public void success(Result<ResponseBody> result) {
+
+                Log.d(TAG,result.toString());
+
+                if(result.response.isSuccessful()){
+
+                    tweetModelArrayList.clear();
+
+                    try {
+                        String responseMessage = result.data.string();
+
+                        JSONObject jsonObject = new JSONObject(responseMessage);
+                        JSONArray jsonArray = jsonObject.optJSONArray("statuses");
+
+                        for (int i = 0; i <jsonArray.length() ; i++) {
+
+                            JSONObject object = jsonArray.optJSONObject(i);
+                            JSONObject userObject = object.optJSONObject("user");
+                            TweetModel tweetModel = new TweetModel();
+                            tweetModel.setImage_url(userObject.optString("profile_image_url"));
+                            tweetModelArrayList.add(tweetModel);
+                        }
+                        tweetsImagesAdapter.notifyDataSetChanged();
+
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+
+                }
+
+
+            }
+
+            @Override
+            public void failure(TwitterException exception) {
+
+            }
+        });
+
+    }
 
 
     @Override
