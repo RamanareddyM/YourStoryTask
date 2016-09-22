@@ -1,5 +1,6 @@
 package com.twitter.hashtag.Activities;
 
+import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Geocoder;
@@ -46,7 +47,6 @@ import org.json.JSONObject;
 
 import okhttp3.ResponseBody;
 import retrofit2.Call;
-import retrofit2.Retrofit;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -63,15 +63,16 @@ public class DashboardActivity extends AppCompatActivity {
     private EditText edittext;
     private Button button;
     private RecyclerView mRecyclerView;
-    private GridLayoutManager gridLayoutManager;
+    private LinearLayoutManager linearLayoutManager;
     private TweetsImagesAdapter tweetsImagesAdapter;
-    private TweetsImagesAdapter mAdapter;
     private GoogleApiClient mGoogleApiClient;
-    private Geocoder geocoder;
     private String authToken;
     private StringBuilder stringBuilder = new StringBuilder();
     private static final String GRANT_TYPE = "client_credentials";
     ArrayList<TweetModel> tweetModelArrayList = new ArrayList<TweetModel>();
+    private String nextUrl = null;
+    private boolean loading = true;
+    private int pastVisiblesItems, visibleItemCount, totalItemCount;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,22 +85,23 @@ public class DashboardActivity extends AppCompatActivity {
 
     }
 
-    private void initializeUI(){
+    private void initializeUI() {
 
         edittext = (EditText) findViewById(R.id.et_search);
         button = (Button) findViewById(R.id.btn_search);
 
         mRecyclerView = (RecyclerView) findViewById(R.id.recycler_view);
-        gridLayoutManager = new GridLayoutManager(this,2);
-        mRecyclerView.setLayoutManager(gridLayoutManager);
+        linearLayoutManager = new LinearLayoutManager(this);
+        mRecyclerView.setLayoutManager(linearLayoutManager);
 
-        tweetsImagesAdapter = new TweetsImagesAdapter(this,tweetModelArrayList);
+        tweetsImagesAdapter = new TweetsImagesAdapter(this, tweetModelArrayList);
+        mRecyclerView.setAdapter(tweetsImagesAdapter);
 
         setOnClickListeners();
 
     }
 
-    private void setOnClickListeners(){
+    private void setOnClickListeners() {
 
         button.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -107,13 +109,40 @@ public class DashboardActivity extends AppCompatActivity {
 
 
                 if (edittext.getText().toString().trim().length() > 0) {
+                    if (!edittext.getText().toString().contains("#"))
+                        Toast.makeText(DashboardActivity.this, "Please search with hash tag", Toast.LENGTH_SHORT).show();
                     tweetModelArrayList.clear();
+                    nextUrl = null;
+                    loading = true;
                     getTweetsUsingHashTag(edittext.getText().toString());
-                    edittext.setText("");
                 } else {
                     Toast.makeText(DashboardActivity.this, "Search cannot be empty", Toast.LENGTH_SHORT).show();
                 }
 
+            }
+        });
+
+
+        mRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
+                if (dy > 0) //check for scroll down
+                {
+                    visibleItemCount = linearLayoutManager.getChildCount();
+                    totalItemCount = linearLayoutManager.getItemCount();
+                    pastVisiblesItems = linearLayoutManager.findFirstVisibleItemPosition();
+
+                    if (loading) {
+                        if ((visibleItemCount + pastVisiblesItems) >= totalItemCount) {
+                            loading = false;
+
+                            if (nextUrl != null) {
+                                paginationTweets(nextUrl);
+                            }
+
+                        }
+                    }
+                }
             }
         });
 
@@ -125,8 +154,6 @@ public class DashboardActivity extends AppCompatActivity {
                 .addApi(Awareness.API)
                 .build();
         mGoogleApiClient.connect();
-        geocoder = new Geocoder(this, Locale.getDefault());
-
     }
 
     public void checkForPermissions() {
@@ -142,6 +169,7 @@ public class DashboardActivity extends AppCompatActivity {
     }
 
     public void getLatAndLong() {
+
 
             Awareness.SnapshotApi.getLocation(mGoogleApiClient)
                     .setResultCallback(new ResultCallback<LocationResult>() {
@@ -159,31 +187,18 @@ public class DashboardActivity extends AppCompatActivity {
     }
 
     public void getLatAndLongAsString(Location location) {
-        
+
         stringBuilder.append(location.getLatitude());
         stringBuilder.append(",");
         stringBuilder.append(location.getLongitude());
         stringBuilder.append(",");
         stringBuilder.append("1000mi");
-        
+
     }
-
-    public static void printLongString(String responseType, String result) {
-
-        int maxLogSize = 4000;
-        for (int i = 0; i <= result.length() / maxLogSize; i++) {
-            int start = i * maxLogSize;
-            int end = (i + 1) * maxLogSize;
-            end = end > result.length() ? result.length() : end;
-
-            Log.d(TAG, responseType + i + " --> " + result.substring(start, end));
-        }
-    }
-
 
     public void getAccessToken() {
-        String encodeApiKey=null;
-        String encodeApiSecret=null;
+        String encodeApiKey = null;
+        String encodeApiSecret = null;
         try {
             encodeApiKey = URLEncoder.encode(AppConstants.TWITTER_KEY, "UTF-8");
             encodeApiSecret = URLEncoder.encode(AppConstants.TWITTER_SECRET, "UTF-8");
@@ -211,47 +226,48 @@ public class DashboardActivity extends AppCompatActivity {
 
     }
 
+
     public void paginationTweets(String nextPage) {
 
-         RetrofitApi.getApi().getPaginationResult("Bearer " + authToken, AppConstants.BASE_URL + nextPage).enqueue(new Callback<ResponseBody>() {
-             @Override
-             public void success(Result<ResponseBody> result) {
+        RetrofitApi.getApi().getPaginationResult("Bearer " + authToken, AppConstants.PAGINATION_URL + nextPage).enqueue(new Callback<ResponseBody>() {
+            @Override
+            public void success(Result<ResponseBody> result) {
 
-                 if(result.response.isSuccessful()){
+                if (result.response.isSuccessful()) {
 
+                    try {
+                        String responseMessage = result.data.string();
 
-                     try {
-                         String responseMessage = result.data.string();
+                        JSONObject jsonObject = new JSONObject(responseMessage);
+                        JSONArray jsonArray = jsonObject.optJSONArray("statuses");
+                        JSONObject searchMetadata = jsonObject.optJSONObject("search_metadata");
 
-                         JSONObject jsonObject = new JSONObject(responseMessage);
-                         JSONArray jsonArray = jsonObject.optJSONArray("statuses");
-
-                         for (int i = 0; i <jsonArray.length() ; i++) {
+                        for (int i = 0; i < jsonArray.length(); i++) {
 
                             JSONObject object = jsonArray.optJSONObject(i);
-                             JSONObject userObject = object.optJSONObject("user");
-                             TweetModel tweetModel = new TweetModel();
-                             tweetModel.setImage_url(userObject.optString("profile_image_url"));
-                             tweetModelArrayList.add(tweetModel);
-                         }
+                            JSONObject userObject = object.optJSONObject("user");
+                            TweetModel tweetModel = new TweetModel();
+                            tweetModel.setImage_url(userObject.optString("profile_image_url"));
+                            tweetModelArrayList.add(tweetModel);
+                        }
 
-                         tweetsImagesAdapter.notifyDataSetChanged();
+                        tweetsImagesAdapter.notifyDataSetChanged();
+                        nextUrl = searchMetadata.optString("next_results");
 
-                     } catch (IOException e) {
-                         e.printStackTrace();
-                     } catch (JSONException e) {
-                         e.printStackTrace();
-                     }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
 
-                 }
+                }
+            }
 
-             }
+            @Override
+            public void failure(TwitterException exception) {
 
-             @Override
-             public void failure(TwitterException exception) {
-
-             }
-         });
+            }
+        });
     }
 
     public void getTweetsUsingHashTag(String query) {
@@ -260,19 +276,17 @@ public class DashboardActivity extends AppCompatActivity {
             @Override
             public void success(Result<ResponseBody> result) {
 
-                Log.d(TAG,result.toString());
 
-                if(result.response.isSuccessful()){
-
-                    tweetModelArrayList.clear();
+                if (result.response.isSuccessful()) {
 
                     try {
                         String responseMessage = result.data.string();
 
                         JSONObject jsonObject = new JSONObject(responseMessage);
                         JSONArray jsonArray = jsonObject.optJSONArray("statuses");
+                        JSONObject searchMetadata = jsonObject.optJSONObject("search_metadata");
 
-                        for (int i = 0; i <jsonArray.length() ; i++) {
+                        for (int i = 0; i < jsonArray.length(); i++) {
 
                             JSONObject object = jsonArray.optJSONObject(i);
                             JSONObject userObject = object.optJSONObject("user");
@@ -280,14 +294,16 @@ public class DashboardActivity extends AppCompatActivity {
                             tweetModel.setImage_url(userObject.optString("profile_image_url"));
                             tweetModelArrayList.add(tweetModel);
                         }
+
                         tweetsImagesAdapter.notifyDataSetChanged();
+
+                        nextUrl = searchMetadata.optString("next_results");
 
                     } catch (IOException e) {
                         e.printStackTrace();
                     } catch (JSONException e) {
                         e.printStackTrace();
                     }
-
                 }
 
 

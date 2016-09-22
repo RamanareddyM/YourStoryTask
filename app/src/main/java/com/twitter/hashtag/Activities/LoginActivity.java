@@ -8,6 +8,7 @@ import android.widget.Toast;
 
 import com.twitter.hashtag.R;
 import com.twitter.hashtag.models.TwitterUser;
+import com.twitter.hashtag.utils.Utils;
 import com.twitter.sdk.android.core.Callback;
 import com.twitter.sdk.android.core.Result;
 import com.twitter.sdk.android.core.TwitterException;
@@ -22,32 +23,41 @@ public class LoginActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_login);
 
+        if(Utils.getInstance().getAccessToken(LoginActivity.this)!=null){
 
-        loginButton = (TwitterLoginButton) findViewById(R.id.twitter_login_button);
-        loginButton.setCallback(new Callback<TwitterSession>() {
-            @Override
-            public void success(Result<TwitterSession> result) {
-                // The TwitterSession is also available through:
-                // Twitter.getInstance().core.getSessionManager().getActiveSession()
-                TwitterSession session = result.data;
-                // with your app's user model
-                TwitterUser twitterUser = new TwitterUser();
-                twitterUser.setUserId(session.getUserId());
-                twitterUser.setUserName(session.getUserName());
-                twitterUser.setToken(session.getAuthToken().token);
+            startActivity(new Intent(LoginActivity.this,DashboardActivity.class));
 
-                Log.d(TAG,"auth "+session.getAuthToken().token);
+        }else {
 
-                startActivity(new Intent(LoginActivity.this,DashboardActivity.class));
+            setContentView(R.layout.activity_login);
+            loginButton = (TwitterLoginButton) findViewById(R.id.twitter_login_button);
+            loginButton.setCallback(new Callback<TwitterSession>() {
+                @Override
+                public void success(Result<TwitterSession> result) {
+                    // The TwitterSession is also available through:
+                    // Twitter.getInstance().core.getSessionManager().getActiveSession()
+                    TwitterSession session = result.data;
+                    // with your app's user model
+                    TwitterUser twitterUser = new TwitterUser();
+                    twitterUser.setUserId(session.getUserId());
+                    twitterUser.setUserName(session.getUserName());
+                    twitterUser.setToken(session.getAuthToken().token);
 
-            }
-            @Override
-            public void failure(TwitterException exception) {
-                Log.d("TwitterKit", "Login with Twitter failure", exception);
-            }
-        });
+                    Utils.getInstance().setAccessToken(LoginActivity.this, session.getAuthToken().token);
+
+                    Log.d(TAG, "auth " + session.getAuthToken().token);
+
+                    startActivity(new Intent(LoginActivity.this, DashboardActivity.class));
+
+                }
+
+                @Override
+                public void failure(TwitterException exception) {
+                    Log.d("TwitterKit", "Login with Twitter failure", exception);
+                }
+            });
+        }
     }
 
 

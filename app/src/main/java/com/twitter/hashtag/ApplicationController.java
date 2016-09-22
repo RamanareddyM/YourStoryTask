@@ -2,6 +2,7 @@ package com.twitter.hashtag;
 
 import android.app.Application;
 
+import com.twitter.hashtag.utils.Utils;
 import com.twitter.sdk.android.Twitter;
 import com.twitter.sdk.android.core.TwitterAuthConfig;
 

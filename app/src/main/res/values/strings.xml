@@ -2,4 +2,5 @@
     <string name="app_name">YourStoryTask</string>
 
     <string name="btn_search">Search</string>
+    <string name="search_place_holder">Search with hashtag</string>
 </resources>
